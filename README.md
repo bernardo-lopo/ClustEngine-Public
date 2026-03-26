@@ -66,12 +66,7 @@ Ensure you have Java 21 or higher installed and accessible via your system’s P
 
 ## Documentation (Work in Progress)
 
-Full documentation is currently being prepared and will be released soon.
-
-[Early PDF Draft](docs/ClustEngine_Documentation.pdf) – This is a preliminary version and may be incomplete or subject to changes.
-
-> **Note:** Final documentation will include detailed guides, diagrams, and usage instructions.
-
+Documentation is currently being prepared and will be released soon..
 
 ## Issues
 

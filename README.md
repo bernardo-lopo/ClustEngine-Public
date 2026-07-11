@@ -46,7 +46,7 @@ The installation process is automated through dedicated deployment scripts. Plea
 
 ### Linux
 1. Navigate to the `deployment/Linux` directory.
-2. Read the [Install_Guide_Linux_Mac.md](deployment/Linux/Install_Guide_Linux.md) file for full instructions.
+2. Read the [Install_Guide_Linux.md](deployment/Linux/Install_Guide_Linux.md) file for full instructions.
 3. Grant execution permissions and run the `install.sh` script to verify dependencies, configure paths, and deploy the application to your home directory.
 
 ## GUI Application and Settings

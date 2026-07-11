@@ -2,7 +2,7 @@ package core.util
 
 import java.io.File
 
-class HostFileManager(private val instanceId: String = "") {
+class HostFileManager(instanceId: String = "") {
     private val tempDirName = "tmp"
     private val hostFileName = if (instanceId.isEmpty()) "tmp_hostfile" else "tmp_hostfile_$instanceId"
 
@@ -19,6 +19,7 @@ class HostFileManager(private val instanceId: String = "") {
             }
         } else {
             val created = tempDir.mkdirs()
+
             if (!created) {
                 throw IllegalStateException(
                     "It was not possible to create the directory named $tempDirName: ${tempDir.absolutePath}",
@@ -35,7 +36,6 @@ class HostFileManager(private val instanceId: String = "") {
         require(hostFile.canWrite()) {
             "$hostFileName is not writable: ${hostFile.absolutePath}"
         }
-
         return hostFile.absolutePath
     }
 

@@ -2,6 +2,8 @@ package client
 
 import core.data.FetchData
 import dto.FloatingIp
+import dto.FloatingIpListResponse
+import dto.FloatingIpResponse
 import dto.OpenStackServersResponse
 import dto.RebootType
 import dto.actions.AddFloatingIpAction
@@ -18,18 +20,16 @@ import kotlinx.serialization.json.Json
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import kotlin.collections.isNotEmpty
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
-
-// Melhorar
-const val PUBLIC_IP = "194.210.100.4"
 
 class OpenStackExecuteRequest(
     val openStack: OpenStackSdk,
     /*
-          In fctCloudRequests contains the reference to the object that contains all the request methods.
+          In openStackCloudRequests contains the reference to the object that contains all the request methods.
           These functions, if needed, return an object that latter will be converted to a json body.
      */
-    val fctCloudRequests: OpenStackRequestMappingSdk,
+    val openStackCloudRequests: OpenStackRequestMappingSdk,
 ) {
     private val logger: Logger = LoggerFactory.getLogger("OpenStackExecuteRequest")
 
@@ -41,25 +41,30 @@ class OpenStackExecuteRequest(
     ) {
         // It is sent a post request, to create all the instances in the FCTCloud
         FetchData.post(
-            body = fctCloudRequests.createCluster(clusterName, clusterSize),
+            body = openStackCloudRequests.createCluster(clusterName, clusterSize),
             url = openStack.createClusterUrl(),
             token = token,
         )
     }
 
     suspend fun getAuth(auth: Auth): String? {
-        val requests = OpenStackRequestMappingSdk(auth)
+        val requests =
+            OpenStackRequestMappingSdk(
+                auth,
+                openStackCloudRequests.flavorRefId,
+                openStackCloudRequests.imageRefId,
+                openStackCloudRequests.availabilityZone,
+                openStackCloudRequests.securityGroup,
+                openStackCloudRequests.networkId,
+                openStackCloudRequests.privateKeyName,
+            )
         val body = requests.getAuth()
         val request =
             FetchData.post(
                 body = body,
                 url = openStack.getAuthToken(),
             )
-        val token =
-            request
-                .header
-                .entries
-                .find { it.key == "x-subject-token" }?.value?.first()
+        val token = request.header.entries.find { it.key == "x-subject-token" }?.value?.first()
         return token
     }
 
@@ -72,9 +77,7 @@ class OpenStackExecuteRequest(
 
         println(request.body)
 
-        val instances =
-            JsonConfig.json
-                .decodeFromString<OpenStackServersResponse>(request.body)
+        val instances = JsonConfig.json.decodeFromString<OpenStackServersResponse>(request.body)
 
         return instances
     }
@@ -104,8 +107,7 @@ class OpenStackExecuteRequest(
 
         if (request.status !in 200..299) {
             logger.error(
-                "Failed to reboot instance $instanceId. " +
-                    "Status: ${request.status}, Body: ${request.body}",
+                "Failed to reboot instance $instanceId. " + "Status: ${request.status}, Body: ${request.body}",
             )
         }
     }
@@ -115,22 +117,12 @@ class OpenStackExecuteRequest(
 
         val allReady =
             instances.servers.all { server ->
-                server.status == "ACTIVE" &&
-                    server.taskState == null &&
-                    server.addresses.values.all { it.isNotEmpty() }
+                server.status == "ACTIVE" && server.taskState == null && server.addresses.values.all { it.isNotEmpty() }
             }
         return if (allReady && instances.servers.isNotEmpty()) instances else null
     }
 
-    suspend fun isClusterInited(token: String): Boolean {
-        val clusterState = getClusterState(token)
-        return clusterState != null
-    }
-
-    suspend fun waitForInstanceState(
-        token: String,
-        isPrimary: Boolean = true,
-    ): OpenStackServersResponse? {
+    suspend fun waitForInstanceState(token: String): OpenStackServersResponse? {
         // In this function it is made pooling to get all the information needed from all instances.
         return try {
             withTimeout(5.minutes) {
@@ -139,11 +131,44 @@ class OpenStackExecuteRequest(
 
                     if (clusterState != null) return@withTimeout clusterState
 
-                    delay(5000)
+                    delay(5000.milliseconds)
                 }
             }
         } catch (_: TimeoutCancellationException) {
             // Timeout reached
+            null
+        } as OpenStackServersResponse?
+    }
+
+    suspend fun waitForFloatingIps(
+        token: String,
+        instanceIds: List<String>,
+    ): OpenStackServersResponse? {
+        // In this function it is made pooling to wait for Floating IPs to be attached.
+        return try {
+            withTimeout(2.minutes) {
+                while (true) {
+                    val instances = getAllInstances(token)
+
+                    val targetServers = instances.servers.filter { it.id in instanceIds }
+
+                    val allReady =
+                        targetServers.isNotEmpty() &&
+                            targetServers.all { server ->
+                                // Check all network interfaces on the server for a floating IP
+                                server.addresses.values.any { addressList ->
+                                    addressList.any { it.type == "floating" }
+                                }
+                            }
+
+                    if (allReady) return@withTimeout instances
+
+                    logger.info("Waiting for Floating IPs to attach to instances... ")
+                    delay(2000.milliseconds)
+                }
+            }
+        } catch (_: TimeoutCancellationException) {
+            logger.warn("Timeout waiting for Floating IPs to attach to instances: $instanceIds")
             null
         } as OpenStackServersResponse?
     }
@@ -207,28 +232,30 @@ class OpenStackExecuteRequest(
         )
     }
 
-//    suspend fun getAvailablePublicIP(token: String): FloatingIpAllocationResponse {
-//        val response =
-//            FetchData.post(
-//                url = fctCloudSdk.getAvailablePublicIP(),
-//                body = "",
-//                token = token,
-//            )
-//        val availablePublicIP = Json.decodeFromString<FloatingIpAllocationResponse>(response.body)
-//
-//        return availablePublicIP
-//    }
+    suspend fun getAvailablePublicIP(token: String): FloatingIpResponse? {
+        val response =
+            FetchData.get(
+                url = openStack.getAvailablePublicIP(),
+                token = token,
+            )
+
+        println("FLOATING IPS JSON: ${response.body}")
+
+        val ipListResponse = Json.decodeFromString<FloatingIpListResponse>(response.body)
+        val availablePublicIP = ipListResponse.floatingIps.firstOrNull { it.instanceId == null }
+
+        return availablePublicIP
+    }
 
     suspend fun addFloatingIPToInstance(
         token: String,
         instanceId: String,
+        availablePublicIP: FloatingIpResponse,
     ) {
-//        val availablePublicIP = getAvailablePublicIP(token)
-
         val body =
             Json.encodeToString(
                 AddFloatingIpAction(
-                    FloatingIp(address = PUBLIC_IP),
+                    FloatingIp(address = availablePublicIP.ip),
                 ),
             )
 

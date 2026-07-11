@@ -1,0 +1,12 @@
+[
+  {
+    "id": "35538ca9-2814-44b1-9859-81a07f0c330c",
+    "displayName": "svc.xs",
+    "specs": "1 vCPU, 2 GiB RAM"
+  },
+  {
+    "id": "20a6fa2c-6e11-4293-b3e9-4cae46b69a64",
+    "displayName": "svc.s",
+    "specs": "2 vCPU, 4 GiB RAM"
+  }
+]

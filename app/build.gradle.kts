@@ -1,164 +1,155 @@
 plugins {
     kotlin("jvm")
+    id("org.jetbrains.compose")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
-group = "app"
-version = ""
+group = "apps"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
+    google()
+    maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
 }
-val commonRuntime: Configuration? by configurations.creating
-val awsRuntime: Configuration? by configurations.creating { extendsFrom(commonRuntime) }
-val openstackRuntime: Configuration? by configurations.creating { extendsFrom(commonRuntime) }
+
+val commonRuntime by configurations.creating
+val awsRuntime by configurations.creating { extendsFrom(commonRuntime) }
+val openstackRuntime by configurations.creating { extendsFrom(commonRuntime) }
 
 configurations.implementation.get().extendsFrom(awsRuntime, openstackRuntime)
 
 dependencies {
-    commonRuntime?.invoke(project(":core"))
-    commonRuntime?.invoke(project(":tui"))
-    commonRuntime?.invoke(project(":tester"))
-    commonRuntime?.invoke("org.slf4j:slf4j-simple:2.0.16")
-    commonRuntime?.invoke("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation(compose.desktop.currentOs)
+    implementation(project(":core"))
+    implementation(project(":gui"))
+    implementation(project(":providers:aws"))
+    implementation(project(":providers:openstack"))
 
-    awsRuntime?.invoke(project(":providers:aws"))
-    awsRuntime?.invoke(platform("aws.sdk.kotlin:bom:1.3.112"))
-    awsRuntime?.invoke("aws.sdk.kotlin:ec2")
+    add("commonRuntime", project(":core"))
+    add("commonRuntime", project(":tui"))
+    add("commonRuntime", project(":tester"))
+    add("commonRuntime", "org.slf4j:slf4j-simple:2.0.16")
+    add("commonRuntime", "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 
-    openstackRuntime?.invoke(project(":providers:openstack"))
+    add("awsRuntime", project(":providers:aws"))
+    add("awsRuntime", platform("aws.sdk.kotlin:bom:1.3.112"))
+    add("awsRuntime", "aws.sdk.kotlin:ec2")
+
+    add("openstackRuntime", project(":providers:openstack"))
 
     testImplementation(kotlin("test"))
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
 }
 
 tasks.test {
     useJUnitPlatform()
 }
 
-val outputNameOpenStackConsoleAPP = "OpenStackConsoleAPP"
-val outputNameAWSConsoleAPP = "AWSConsoleAPP"
+compose.desktop {
+    application {
+        mainClass = "apps.MainKt"
+
+        nativeDistributions {
+            targetFormats(
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb,
+            )
+            packageName = "ClustEngine"
+            macOS {
+                bundleID = "com.clustengine.app"
+                packageVersion = "1.0.0"
+                packageBuildVersion = "1.0.0"
+            }
+        }
+    }
+}
+
 val outputNameOpenStackTester = "OpenStackTester"
 val outputNameAWSTester = "AWSTester"
+val outputNameGeneralEnv = "GeneralConsoleAPPEnv"
+val outputNameGuiApp = "GuiAPP"
 
-tasks.register<Jar>("OpenStackConsoleAppJar") {
-    dependsOn("classes")
+fun registerFatJar(
+    taskName: String,
+    baseName: String,
+    mainClassName: String,
+    excludePattern: String?,
+    config: Configuration,
+) {
+    tasks.register<Jar>(taskName) {
+        dependsOn("classes")
 
-    manifest {
-        attributes["Main-Class"] = "apps.OpenStackConsoleAPPKt"
-        attributes["Implementation-Title"] = "OpenStack Console APP Jar"
-        attributes["Implementation-Version"] = archiveVersion.get()
-        attributes["Multi-Release"] = "true"
-    }
-
-    archiveBaseName.set(outputNameOpenStackConsoleAPP)
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-
-    from(sourceSets.main.get().output) {
-        exclude("apps/AWS*.class")
-    }
-
-    from({
-        openstackRuntime?.map { file ->
-            if (file.isDirectory) file else zipTree(file)
+        manifest {
+            attributes["Main-Class"] = mainClassName
+            attributes["Implementation-Title"] = baseName
+            attributes["Implementation-Version"] = archiveVersion.get()
+            attributes["Multi-Release"] = "true"
         }
-    })
 
-    destinationDirectory.set(layout.projectDirectory.dir(".."))
+        archiveBaseName.set(baseName)
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+        from(sourceSets.main.get().output) {
+            if (excludePattern != null) {
+                exclude(excludePattern)
+            }
+        }
+
+        from({
+            config.map { file ->
+                if (file.isDirectory) file else zipTree(file)
+            }
+        })
+
+        destinationDirectory.set(layout.projectDirectory.dir(".."))
+    }
 }
 
-tasks.register<Jar>("AWSConsoleAPPJar") {
-    dependsOn("classes")
-
-    manifest {
-        attributes["Main-Class"] = "apps.AWSConsoleAPPKt"
-        attributes["Implementation-Title"] = "AWS Console APP Jar"
-        attributes["Implementation-Version"] = archiveVersion.get()
-        attributes["Multi-Release"] = "true"
-    }
-
-    archiveBaseName.set(outputNameAWSConsoleAPP)
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-
-    from(sourceSets.main.get().output) {
-        exclude("apps/OpenStack*.class")
-    }
-
-    from({
-        awsRuntime?.map { file ->
-            if (file.isDirectory) file else zipTree(file)
-        }
-    })
-
-    destinationDirectory.set(layout.projectDirectory.dir(".."))
-}
-
-tasks.register<Jar>("OpenStackTesterJar") {
-    dependsOn("classes")
-
-    manifest {
-        attributes["Main-Class"] = "apps.OpenStackTesterAPPKt"
-        attributes["Implementation-Title"] = "OpenStack Tester APP Jar"
-        attributes["Implementation-Version"] = archiveVersion.get()
-        attributes["Multi-Release"] = "true"
-    }
-
-    archiveBaseName.set(outputNameOpenStackTester)
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-
-    from(sourceSets.main.get().output) {
-        exclude("apps/AWS*.class")
-    }
-
-    from({
-        openstackRuntime?.map { file ->
-            if (file.isDirectory) file else zipTree(file)
-        }
-    })
-
-    destinationDirectory.set(layout.projectDirectory.dir(".."))
-}
-
-tasks.register<Jar>("AWSTesterJar") {
-    dependsOn("classes")
-
-    manifest {
-        attributes["Main-Class"] = "apps.AWSTesterAPPKt"
-        attributes["Implementation-Title"] = "AWS Tester APP Jar"
-        attributes["Implementation-Version"] = archiveVersion.get()
-        attributes["Multi-Release"] = "true"
-    }
-
-    archiveBaseName.set(outputNameAWSTester)
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-
-    from(sourceSets.main.get().output) {
-        exclude("apps/OpenStack*.class")
-    }
-
-    from({
-        awsRuntime?.map { file ->
-            if (file.isDirectory) file else zipTree(file)
-        }
-    })
-
-    destinationDirectory.set(layout.projectDirectory.dir(".."))
-}
+registerFatJar("OpenStackTesterJar", outputNameOpenStackTester, "apps.OpenStackTesterAPPKt", "apps/AWS*.class", openstackRuntime)
+registerFatJar("AWSTesterJar", outputNameAWSTester, "apps.AWSTesterAPPKt", "apps/OpenStack*.class", awsRuntime)
+registerFatJar(
+    "GeneralConsoleAPPEnvJar",
+    outputNameGeneralEnv,
+    "apps.GeneralConsoleAPPEnvKt",
+    "apps/GeneralConsoleAPPEnv*.class",
+    awsRuntime,
+)
+registerFatJar("GuiAppJar", outputNameGuiApp, "apps.GUIAppKt", null, configurations.runtimeClasspath.get())
 
 tasks.build {
-    dependsOn("AWSTesterJar", "OpenStackTesterJar", "AWSConsoleAPPJar", "OpenStackConsoleAppJar")
+    dependsOn(
+        "AWSTesterJar",
+        "OpenStackTesterJar",
+        "GeneralConsoleAPPEnvJar",
+        "GuiAppJar",
+    )
 }
 
 tasks.clean {
     doLast {
-        file("../$outputNameOpenStackConsoleAPP.jar").delete()
-        file("../$outputNameAWSConsoleAPP.jar").delete()
         file("../$outputNameOpenStackTester.jar").delete()
         file("../$outputNameAWSTester.jar").delete()
-
-        file("../ConsoleAPP.jar").delete()
+        file("../$outputNameGeneralEnv.jar").delete()
+        file("../$outputNameGuiApp.jar").delete()
         file("../Tester.jar").delete()
+    }
+}
+
+afterEvaluate {
+    val runtimeAttributes = configurations.runtimeClasspath.get().attributes
+    listOf(commonRuntime, awsRuntime, openstackRuntime).forEach { config ->
+        config.attributes {
+            runtimeAttributes.keySet().forEach { key ->
+                @Suppress("UNCHECKED_CAST")
+                attribute(key as Attribute<Any>, runtimeAttributes.getAttribute(key)!!)
+            }
+        }
     }
 }

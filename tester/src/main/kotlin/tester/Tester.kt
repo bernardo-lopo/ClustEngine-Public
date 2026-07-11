@@ -31,7 +31,7 @@ class Tester(
 
     private fun checkAndDelete() {
         if (!isDeleted) {
-            deleteCluster
+            deleteCluster()
             isDeleted = true
         }
     }
@@ -64,10 +64,10 @@ class Tester(
 
                 logger.info("Iteration: ${cluster + 1}")
 
-                var clusterData: Pair<PartialTimesPrimary, List<PartialTimesNonPrimary>>? = null
+                var clusterData: Pair<PartialTimesPrimary?, List<PartialTimesNonPrimary?>>? = null
                 val time =
                     timeElapsed {
-                        clusterData = requireNotNull(initCluster) { "initCluster returned null" }
+                        clusterData = initCluster()
                     }
 
                 logger.info("Data stored")
@@ -78,7 +78,7 @@ class Tester(
                         partialTimes =
                             PartialTimesOutput(
                                 pMachine = clusterData!!.first,
-                                nPMachines = clusterData.second,
+                                nPMachines = clusterData!!.second,
                             ),
                         numberOfInstances = nInstances,
                         testedAt =
@@ -120,9 +120,9 @@ class Tester(
 
     private fun safeExit() {
         try {
-            if (isInited || !isDeleted) {
+            if (isInited() == true || !isDeleted) {
                 logger.info("Cleaning up cluster before shutdown...")
-                deleteCluster
+                deleteCluster()
                 isDeleted = true
             }
         } catch (e: Exception) {

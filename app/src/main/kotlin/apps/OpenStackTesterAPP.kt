@@ -1,5 +1,6 @@
 package apps
 
+import OpenStackClusterEngine
 import client.OpenStackExecuteRequest
 import client.OpenStackRequestMappingSdk
 import client.OpenStackSdk
@@ -15,8 +16,8 @@ import dto.auth.Password
 import dto.auth.Project
 import dto.auth.Scope
 import dto.auth.User
-import providers.openstack.OpenStackClusterEngine
 import tester.Tester
+import java.io.File
 
 fun main() {
     try {
@@ -67,9 +68,15 @@ fun main() {
                             OpenStackSdk(
                                 baseUrl = "https://stratus.d.acnca.pt:8774/v2.1",
                             ),
-                        fctCloudRequests =
+                        openStackCloudRequests =
                             OpenStackRequestMappingSdk(
                                 auth = auth,
+                                flavorRefId = "20a6fa2c-6e11-4293-b3e9-4cae46b69a64",
+                                imageRefId = "597fbc92-c33c-49f2-9793-d287b12690d9",
+                                availabilityZone = "nova",
+                                securityGroup = "default",
+                                networkId = "4dfa5963-ece6-473f-be43-c0ab48dfc4af",
+                                privateKeyName = "servers-fct",
                             ),
                     ),
                 clusterSize = 2,
@@ -84,6 +91,7 @@ fun main() {
                 ipRoutingMode = SingleIpRouting(),
                 auth = auth,
                 io = io,
+                fetchExecutionTimes = false,
             )
 
         val engine4 =
@@ -94,9 +102,15 @@ fun main() {
                             OpenStackSdk(
                                 baseUrl = "https://stratus.d.acnca.pt:8774/v2.1",
                             ),
-                        fctCloudRequests =
+                        openStackCloudRequests =
                             OpenStackRequestMappingSdk(
                                 auth = auth,
+                                flavorRefId = "20a6fa2c-6e11-4293-b3e9-4cae46b69a64",
+                                imageRefId = "597fbc92-c33c-49f2-9793-d287b12690d9",
+                                availabilityZone = "nova",
+                                securityGroup = "default",
+                                networkId = "4dfa5963-ece6-473f-be43-c0ab48dfc4af",
+                                privateKeyName = "servers-fct",
                             ),
                     ),
                 clusterSize = 4,
@@ -111,6 +125,7 @@ fun main() {
                 ipRoutingMode = SingleIpRouting(),
                 auth = auth,
                 io = io,
+                fetchExecutionTimes = false,
             )
 
         val engine8 =
@@ -121,9 +136,15 @@ fun main() {
                             OpenStackSdk(
                                 baseUrl = "https://stratus.d.acnca.pt:8774/v2.1",
                             ),
-                        fctCloudRequests =
+                        openStackCloudRequests =
                             OpenStackRequestMappingSdk(
                                 auth = auth,
+                                flavorRefId = "20a6fa2c-6e11-4293-b3e9-4cae46b69a64",
+                                imageRefId = "597fbc92-c33c-49f2-9793-d287b12690d9",
+                                availabilityZone = "nova",
+                                securityGroup = "default",
+                                networkId = "4dfa5963-ece6-473f-be43-c0ab48dfc4af",
+                                privateKeyName = "servers-fct",
                             ),
                     ),
                 clusterSize = 8,
@@ -138,6 +159,7 @@ fun main() {
                 ipRoutingMode = SingleIpRouting(),
                 auth = auth,
                 io = io,
+                fetchExecutionTimes = true,
             )
 
         val service2 = ClusterService(engine2, io)
@@ -167,9 +189,9 @@ fun main() {
         test1.run()
         test2.run()
         test3.run()
-    } catch (e: Exception) {
+    } catch (_: Exception) {
     } finally {
-        java.io.File("temp").deleteRecursively()
-        java.io.File("tmp").deleteRecursively()
+        File("temp").deleteRecursively()
+        File("tmp").deleteRecursively()
     }
 }

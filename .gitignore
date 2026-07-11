@@ -4,6 +4,15 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+### ClustEngine ###
+.clustenginesettings
+
+### Auth ###
+auth.properties
+openstack_credentials.properties
+config.properties
+aws_config.properties
+
 # Python virtual environment
 scripts/venv/
 
@@ -13,8 +22,11 @@ scripts/results_analysis/
 # Temporary folders
 tmp
 
+.env
+scripts/venv
+scripts/results_analysis
+
 # Temporary files
-*.json
 
 ### IntelliJ IDEA ###
 .idea

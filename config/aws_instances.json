@@ -1,0 +1,17 @@
+[
+  {
+    "id": "t2.micro",
+    "displayName": "t2.micro (General Purpose)",
+    "specs": "1 vCPU, 1 GiB RAM"
+  },
+  {
+    "id": "t3.medium",
+    "displayName": "t3.medium (General Purpose)",
+    "specs": "2 vCPU, 4 GiB RAM"
+  },
+  {
+    "id": "c5.large",
+    "displayName": "c5.large (Compute Optimized)",
+    "specs": "2 vCPU, 4 GiB RAM"
+  }
+]

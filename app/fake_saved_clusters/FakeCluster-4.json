@@ -1,0 +1,40 @@
+{
+  "clusterId": "5c96e3de-84cd-4e2f-a377-3f36cce254c6",
+  "clusterName": "Test-Cluster-500",
+  "provider": "AWSClusterEngine",
+  "instanceTypeId": "t2.micro",
+  "primaryInstance": {
+    "id": "i-fake-node-001",
+    "privateIpAddress": "10.0.0.1",
+    "publicDns": "ec2-node-1.compute.amazonaws.com",
+    "publicIp": "203.0.113.1"
+  },
+  "instances": [
+    {
+      "id": "i-fake-node-001",
+      "privateIpAddress": "10.0.0.1",
+      "publicDns": "ec2-node-1.compute.amazonaws.com",
+      "publicIp": "203.0.113.1"
+    },
+    {
+      "id": "i-fake-node-002",
+      "privateIpAddress": "10.0.0.2",
+      "publicDns": "ec2-node-2.compute.amazonaws.com",
+      "publicIp": "203.0.113.2"
+    },
+    {
+      "id": "i-fake-node-003",
+      "privateIpAddress": "10.0.0.3",
+      "publicDns": "ec2-node-3.compute.amazonaws.com",
+      "publicIp": "203.0.113.3"
+    },
+    {
+      "id": "i-fake-node-004",
+      "privateIpAddress": "10.0.0.4",
+      "publicDns": "ec2-node-4.compute.amazonaws.com",
+      "publicIp": "203.0.113.4"
+    }
+  ],
+  "clusterKeyFilePath": "/home/bernardo/.ssh/servers-fct.pem",
+  "clusterSize": 4
+}

@@ -21,5 +21,5 @@ class OpenStackSdk(val baseUrl: String) {
 
     fun getAuthToken() = "https://stratus.d.acnca.pt:5000/v3/auth/tokens"
 
-    // fun getAvailablePublicIP() = "$baseUrl/os-floating-ips"
+    fun getAvailablePublicIP() = "$baseUrl/os-floating-ips"
 }

@@ -1,5 +1,6 @@
 package apps
 
+import AWSClusterEngine
 import aws.sdk.kotlin.services.ec2.Ec2Client
 import aws.sdk.kotlin.services.ec2.model.InstanceType
 import core.ClusterEngineIO
@@ -9,12 +10,14 @@ import core.domain.MultiIpRouting
 import core.util.ConfigurationsLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import providers.aws.AWSClusterEngine
 import tester.Tester
+import java.io.File
 
 fun main(): Unit =
     try {
         runBlocking(Dispatchers.IO) {
+            File("tmp").deleteRecursively()
+
             val config = ConfigurationsLoader("config/aws_config.properties")
 
             val ec2Client = Ec2Client { region = "eu-central-1" }
@@ -37,6 +40,7 @@ fun main(): Unit =
                     imageId = config.getProperty("default.os"),
                     ipRoutingMode = MultiIpRouting(),
                     io = io,
+                    fetchExecutionTimes = true,
                 )
 
             val engine4 =
@@ -55,6 +59,7 @@ fun main(): Unit =
                     imageId = config.getProperty("default.os"),
                     ipRoutingMode = MultiIpRouting(),
                     io = io,
+                    fetchExecutionTimes = true,
                 )
 
             val engine8 =
@@ -73,6 +78,7 @@ fun main(): Unit =
                     imageId = config.getProperty("default.os"),
                     ipRoutingMode = MultiIpRouting(),
                     io = io,
+                    fetchExecutionTimes = true,
                 )
 
             val service2 = ClusterService(engine2, io)
@@ -106,6 +112,5 @@ fun main(): Unit =
         }
     } catch (_: Exception) {
     } finally {
-        java.io.File("temp").deleteRecursively()
-        java.io.File("tmp").deleteRecursively()
+        File("tmp").deleteRecursively()
     } as Unit

@@ -1,5 +1,6 @@
 package core
 
+import core.domain.ClustEngineInstance
 import core.domain.PartialTimesNonPrimary
 import core.domain.PartialTimesPrimary
 
@@ -7,6 +8,8 @@ interface ClusterServiceProviderInterface {
     fun isClusterInited(): Boolean
 
     fun startAll()
+
+    fun listClusterInstances(): List<ClustEngineInstance>
 
     fun stopAll()
 
@@ -18,5 +21,5 @@ interface ClusterServiceProviderInterface {
 
     fun deleteInstance(id: String)
 
-    fun init(): Pair<PartialTimesPrimary, List<PartialTimesNonPrimary>>
+    fun init(): Pair<PartialTimesPrimary?, List<PartialTimesNonPrimary?>>
 }

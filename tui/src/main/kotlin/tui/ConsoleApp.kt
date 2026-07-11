@@ -12,6 +12,7 @@ class ConsoleApp(service: ClusterServiceProviderInterface) : ClusterManager(serv
     private enum class Option {
         Exit,
         InitCluster,
+        ListClusterInstances,
         StartCluster,
         StopCluster,
         DeleteCluster,
@@ -25,7 +26,7 @@ class ConsoleApp(service: ClusterServiceProviderInterface) : ClusterManager(serv
         Runtime.getRuntime().addShutdownHook(
             Thread {
                 logger.info("Shutdown initiated, closing...")
-                safeExit()
+                // safeExit()
             },
         )
         while (true) {
@@ -37,21 +38,27 @@ class ConsoleApp(service: ClusterServiceProviderInterface) : ClusterManager(serv
                     when (userInput) {
                         Option.Exit -> {
                             logger.info("User requested exit, shutting down ...")
-                            safeExit()
+                            // safeExit()
                             exitProcess(0)
                         }
                         Option.InitCluster -> {
                             val startTime = System.currentTimeMillis()
-                            initCluster
+                            initCluster()
                             val timeElapsed = System.currentTimeMillis() - startTime
                             logger.info("Total time: ${timeElapsed / 1000} seconds")
                         }
+                        Option.ListClusterInstances -> {
+                            val output = listClusterInstances()
+                            println(output)
 
-                        Option.StartCluster -> start
-                        Option.StopCluster -> stop
+                            println("\nPress Enter to return to the menu...")
+                            readlnOrNull()
+                        }
+
+                        Option.StartCluster -> start()
+                        Option.StopCluster -> stop()
                         Option.DeleteCluster -> {
-                            deleteCluster
-                            initCluster
+                            deleteCluster()
                         }
 
                         Option.StartById -> {
@@ -107,12 +114,13 @@ class ConsoleApp(service: ClusterServiceProviderInterface) : ClusterManager(serv
             println()
             println("0. Exit")
             println("1. Init Cluster")
-            println("2. Start Cluster")
-            println("3. Stop Cluster")
-            println("4. Delete Cluster")
-            println("5. Start Instance")
-            println("6. Stop Instance")
-            println("7. Delete Instance")
+            println("2. List ClusterInstances")
+            println("3. Start Cluster")
+            println("4. Stop Cluster")
+            println("5. Delete Cluster")
+            println("6. Start Instance")
+            println("7. Stop Instance")
+            println("8. Delete Instance")
             println()
             print("> ")
             val scanner = readln().toInt()
@@ -134,24 +142,19 @@ class ConsoleApp(service: ClusterServiceProviderInterface) : ClusterManager(serv
         return option
     }
 
-    private fun clearConsole() {
-        // This console is 80 columns and 25 lines.
-        repeat(25) { println("\n") }
-    }
-
-    private fun safeExit() {
-        try {
-            if (isInited) {
-                logger.info("Cleaning up cluster before shutdown...")
-                deleteCluster
-                logger.info("Stopped using shutdown hook")
-            }
-        } catch (e: Exception) {
-            logger.error("Error while shutting down", e)
-        } finally {
-            logger.info("Shutdown hook finished")
-        }
-    }
+//    private fun safeExit() {
+//        try {
+//            if (isInited() == true) {
+//                logger.info("Cleaning up cluster before shutdown...")
+//                deleteCluster()
+//                logger.info("Stopped using shutdown hook")
+//            }
+//        } catch (e: Exception) {
+//            logger.error("Error while shutting down", e)
+//        } finally {
+//            logger.info("Shutdown hook finished")
+//        }
+//    }
 
     fun clustEngine() =
         "+--------------------------------------------------------------------------------------------+\n" +

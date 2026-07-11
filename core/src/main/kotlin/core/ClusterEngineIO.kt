@@ -4,6 +4,10 @@ import core.domain.ClustEngineInstance
 import core.domain.PartialTimesNonPrimary
 import core.domain.PartialTimesPrimary
 import core.util.HostFileManager
+import core.util.ScriptConfigLoader.SCRIPT_NAME
+import core.util.ScriptConfigLoader.SCRIPT_PATH
+import core.util.ScriptConfigLoader.USER_SCRIPT_PATH
+import core.util.SshCommandBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -17,14 +21,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 
-const val SCRIPT_PATH = "scripts/setup_cluster.sh"
-const val SCRIPT_NAME = "setup_cluster.sh"
-
 private val logger: Logger = LoggerFactory.getLogger("ClusterEngineIO")
-
 const val TERMINATION_STRING = "kill-process"
-
 const val PATH_TO_KNOWN_HOSTS_FILE = "tmp/tmp_hostfile"
+const val TEMP_DIR_TIMES_PATH = "tmp/times"
+
+val USER_SCRIPT_NAME: String = File(USER_SCRIPT_PATH).name
 
 class ClusterEngineIO {
     private val hostFileManager = HostFileManager()
@@ -57,17 +59,13 @@ class ClusterEngineIO {
         val pathToKnownHostsFile = "tmp/tmp_hostfile_${instanceIdxObj.get()}"
 
         val commandToCheck =
-            arrayOf(
-                "ssh",
-//                "-N", // Does not run a shell.
-//                "-T", // Does not allocate a terminal
-                "-o", "ExitOnForwardFailure=yes",
-                "-o", "StrictHostKeyChecking=no",
-                "-o", "UserKnownHostsFile=$pathToKnownHostsFile",
-                "-i",
-                clusterKeyFilePath,
-                "$userOnInstance@$primaryInstancePublicIp",
-                "exit",
+            SshCommandBuilder.buildSshCommand(
+                host = primaryInstancePublicIp,
+                user = userOnInstance,
+                identityFile = clusterKeyFilePath,
+                knownHostsFile = pathToKnownHostsFile,
+                extraOptions = listOf("-o", "ExitOnForwardFailure=yes", "-o", "StrictHostKeyChecking=no"),
+                remoteCommand = "exit",
             )
 
         while (true) {
@@ -85,20 +83,22 @@ class ClusterEngineIO {
         }
 
         val baseCommandSsh =
-            arrayOf(
-                "ssh",
-                "-t",
-                "-t",
-                "-o", "UserKnownHostsFile=$pathToKnownHostsFile",
-                "-o", "ExitOnForwardFailure=yes",
-                "-o", "LogLevel=ERROR",
-                "-o", "StrictHostKeyChecking=no",
-                "-i",
-                clusterKeyFilePath,
-            ).plus(portForwardingElements.toTypedArray()).plus(
-                arrayOf(
-                    "$userOnInstance@$primaryInstancePublicIp",
-                ),
+            SshCommandBuilder.buildSshCommand(
+                host = primaryInstancePublicIp,
+                user = userOnInstance,
+                identityFile = clusterKeyFilePath,
+                knownHostsFile = pathToKnownHostsFile,
+                forcePseudoTerminal = true,
+                extraOptions =
+                    listOf(
+                        "-o",
+                        "ExitOnForwardFailure=yes",
+                        "-o",
+                        "LogLevel=ERROR",
+                        "-o",
+                        "StrictHostKeyChecking=no",
+                    ),
+                portForwarding = portForwardingElements,
             )
 
         val process =
@@ -154,54 +154,20 @@ class ClusterEngineIO {
         userOnInstance: String = "ubuntu",
         publicIp: String,
         isPrimary: Boolean,
-        scriptPath: String,
         clusterKeyFilePath: String,
         allInstances: List<ClustEngineInstance>,
     ): Boolean {
-        if (!scriptExists(scriptPath)) return false
-
-        hostFileManager.deleteHostFile()
-        hostFileManager.createHostFile()
-
-        val baseCommandScp =
-            arrayOf(
-                "scp",
-                // This option accepts fingerprint and adds to the known hosts file.
-                "-o", "StrictHostKeyChecking=no",
-                // This option sets the timeout for the connection in seconds.
-                "-o", "ConnectTimeout=10",
-                "-o", "UserKnownHostsFile=$PATH_TO_KNOWN_HOSTS_FILE",
-                "-i", clusterKeyFilePath,
-                SCRIPT_PATH,
-                "$userOnInstance@$publicIp:",
-            )
-
-        baseCommandScp.forEach {
-            print("$it ")
-        }
-
-        if (!executeSecureShellCommand(baseCommandScp, isScp = true)) return false
-
-        val clusterPrivateIps = allInstances.joinToString(" ") { it.privateIpAddress }
-        val extraArgs = if (isPrimary) arrayOf("-p", "-s", primaryInstanceIP) else arrayOf("-s", primaryInstanceIP)
-
-        // It is build an SSH command based if it's the primary instance or not.
-        hostFileManager.deleteHostFile()
-        hostFileManager.createHostFile()
-        val baseCommand =
-            arrayOf(
-                "ssh",
-                // This option accepts fingerprint and adds to the known hosts file.
-                "-o",
-                "StrictHostKeyChecking=no",
-                // This option sets the timeout for the connection in seconds.
-                "-o", "ConnectTimeout=10",
-                "-o", "UserKnownHostsFile=$PATH_TO_KNOWN_HOSTS_FILE",
-                "-i",
-                clusterKeyFilePath,
-                "$userOnInstance@$publicIp",
-            )
-        return allowExecutionAndRun(userOnInstance, baseCommand, extraArgs, clusterPrivateIps)
+        return transferAndExecuteScript(
+            userOnInstance = userOnInstance,
+            targetHost = publicIp,
+            // Uses the default port 22
+            targetPort = null,
+            isPrimary = isPrimary,
+            primaryInstancePrivateIp = primaryInstanceIP,
+            clusterKeyFilePath = clusterKeyFilePath,
+            allInstances = allInstances,
+            knownHostsFilePath = PATH_TO_KNOWN_HOSTS_FILE,
+        )
     }
 
     fun runScriptOnInstanceUsingOnePublicIp(
@@ -212,63 +178,93 @@ class ClusterEngineIO {
         allInstances: List<ClustEngineInstance>,
         instanceIdx: Int,
     ): Boolean {
-        val clusterPrivateIps = allInstances.joinToString(" ") { it.privateIpAddress }
+        val localHostFileManager = HostFileManager(instanceIdx.toString())
+        localHostFileManager.deleteHostFile()
+        val pathToKnownHostsFile = localHostFileManager.createHostFile()
+
+        return transferAndExecuteScript(
+            userOnInstance = userOnInstance,
+            targetHost = "localhost",
+            targetPort = instanceIdx,
+            isPrimary = isPrimary,
+            primaryInstancePrivateIp = primaryInstancePrivateIP,
+            clusterKeyFilePath = clusterKeyFilePath,
+            allInstances = allInstances,
+            knownHostsFilePath = pathToKnownHostsFile,
+        )
+    }
+
+    private fun transferAndExecuteScript(
+        userOnInstance: String,
+        targetHost: String,
+        targetPort: Int?,
+        isPrimary: Boolean,
+        primaryInstancePrivateIp: String,
+        clusterKeyFilePath: String,
+        allInstances: List<ClustEngineInstance>,
+        knownHostsFilePath: String,
+    ): Boolean {
+        if (!scriptExists(SCRIPT_PATH)) return false
 
         hostFileManager.deleteHostFile()
         hostFileManager.createHostFile()
 
-        val hostFileManager = HostFileManager(instanceIdx.toString())
-        hostFileManager.deleteHostFile()
-        val pathToKnownHostsFile = hostFileManager.createHostFile()
-
         val baseCommandScp =
-            arrayOf(
-                "scp",
-                // This option accepts fingerprint and adds to the known hosts file.
-                "-o", "StrictHostKeyChecking=no",
-                "-o", "UserKnownHostsFile=$pathToKnownHostsFile",
-                // This option sets the timeout for the connection in seconds.
-                "-i", clusterKeyFilePath,
-                "-P",
-                instanceIdx.toString(),
-                SCRIPT_PATH,
-                "$userOnInstance@localhost:",
+            SshCommandBuilder.buildScpCommand(
+                sourcePath = SCRIPT_PATH,
+                destinationPath = "$userOnInstance@$targetHost:",
+                identityFile = clusterKeyFilePath,
+                knownHostsFile = knownHostsFilePath,
+                port = targetPort,
+                extraOptions = listOf("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"),
             )
-
-        baseCommandScp.forEach {
-            print("$it ")
-        }
 
         if (!executeSecureShellCommand(baseCommandScp, isScp = true)) return false
 
-        val extraArgs =
-            if (isPrimary) arrayOf("-p", "-s", primaryInstancePrivateIP) else arrayOf("-s", primaryInstancePrivateIP)
+        if (scriptExists(USER_SCRIPT_PATH)) {
+            val userScriptScp =
+                SshCommandBuilder.buildScpCommand(
+                    sourcePath = USER_SCRIPT_PATH,
+                    destinationPath = "$userOnInstance@$targetHost:$USER_SCRIPT_NAME",
+                    identityFile = clusterKeyFilePath,
+                    knownHostsFile = knownHostsFilePath,
+                    port = targetPort,
+                    extraOptions = listOf("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"),
+                )
 
-        // It is build an SSH command based if it's the primary instance or not.
+            if (!executeSecureShellCommand(userScriptScp, isScp = true)) {
+                logger.warn("User payload script found locally but failed to transfer to $targetHost.")
+                return false
+            }
+        }
+
+        val clusterPrivateIps = allInstances.joinToString(" ") { it.privateIpAddress }
+        val extraArgs =
+            if (isPrimary) {
+                arrayOf("-p", "-s", primaryInstancePrivateIp)
+            } else {
+                arrayOf("-s", primaryInstancePrivateIp)
+            }
+
         hostFileManager.deleteHostFile()
         hostFileManager.createHostFile()
-        val baseCommandSsh =
-            arrayOf(
-                "ssh",
-                // This option accepts fingerprint and adds to the known hosts file.
-                "-o", "StrictHostKeyChecking=no",
-                "-o", "UserKnownHostsFile=$pathToKnownHostsFile",
-                // This option sets the timeout for the connection in seconds.
-                "-o",
-                "ConnectTimeout=10",
-                "-i",
-                clusterKeyFilePath,
-                "-p",
-                instanceIdx.toString(),
-                "$userOnInstance@localhost",
+
+        val remoteScriptPath = "/home/$userOnInstance/$SCRIPT_NAME"
+        val remoteExecution = "chmod +x $remoteScriptPath; $remoteScriptPath ${extraArgs.joinToString(" ")} $clusterPrivateIps"
+
+        // Executes the script
+        val sshCommand =
+            SshCommandBuilder.buildSshCommand(
+                host = targetHost,
+                user = userOnInstance,
+                identityFile = clusterKeyFilePath,
+                knownHostsFile = knownHostsFilePath,
+                port = targetPort,
+                extraOptions = listOf("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"),
+                remoteCommand = remoteExecution,
             )
 
-        return allowExecutionAndRun(
-            userOnInstance,
-            baseCommandSsh,
-            extraArgs,
-            clusterPrivateIps,
-        )
+        return executeSecureShellCommand(sshCommand, isScp = false)
     }
 
     fun getTimesFromMachineUsingOnePublicIp(
@@ -277,63 +273,32 @@ class ClusterEngineIO {
         userOnInstance: String = "ubuntu",
         instanceIdxObj: AtomicInteger,
     ): Any {
-        val tempDirPath = "temp"
         val port = instanceIdxObj.get()
-        val tempFilePath = "$tempDirPath/temp_data_localport_$port.txt"
+        val tempFilePath = "$TEMP_DIR_TIMES_PATH/temp_data_localport_$port.txt"
 
-        try {
-            Files.createDirectories(Paths.get(tempDirPath))
-
-            hostFileManager.deleteHostFile()
-            hostFileManager.createHostFile()
+        return try {
+            preparationForScp(TEMP_DIR_TIMES_PATH)
 
             val pathToKnownHostsFile = "tmp/tmp_hostfile_${instanceIdxObj.get()}"
 
             val copyTimesCommand =
-                arrayOf(
-                    "scp",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "ConnectTimeout=10",
-                    "-o", "UserKnownHostsFile=$pathToKnownHostsFile",
-                    "-i", clusterKeyFilePath,
-                    "-P", port.toString(),
-                    "$userOnInstance@localhost:/home/ubuntu/times.txt",
-                    tempFilePath,
+                SshCommandBuilder.buildScpCommand(
+                    sourcePath = "$userOnInstance@localhost:/home/ubuntu/times.txt",
+                    destinationPath = tempFilePath,
+                    identityFile = clusterKeyFilePath,
+                    knownHostsFile = pathToKnownHostsFile,
+                    port = port,
+                    extraOptions = listOf("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"),
                 )
 
-            // Executes the SCP command
-            val success = executeSecureShellCommand(copyTimesCommand, isScp = true)
-
-            if (!success) {
-                logger.warn("Could not retrieve times.txt from instance via port $port.")
+            if (!executeScpAndLog(copyTimesCommand, port)) {
                 return timesFromFileContent(isPrimary, null)
             }
 
-            // Verify if the file was actually created and has content
-            val downloadedFile = File(tempFilePath)
-            if (!downloadedFile.exists() || downloadedFile.length() == 0L) {
-                logger.warn("File times.txt was not downloaded correctly or is empty for port $port.")
-                return timesFromFileContent(isPrimary, null)
-            }
-
-            // Reads the contents of the file
-            val lines = downloadedFile.readLines()
-
-            // Deletes the temporary file after reading to clean up
-            downloadedFile.delete()
-
-            // Warns if the file has fewer lines than expected
-            if (isPrimary && lines.size < 5) {
-                logger.warn("Primary times.txt on port $port has less than 5 lines: $lines")
-            } else if (!isPrimary && lines.size < 3) {
-                logger.warn("Non-primary times.txt on port $port has less than 3 lines: $lines")
-            }
-
-            // Returns the appropriate data object with fallback to "error" if lines are missing
-            return timesFromFileContent(isPrimary, lines)
+            parseTimesFileAndCleanUp(isPrimary, tempFilePath, "port $port")
         } catch (e: Exception) {
             logger.error("Failed to get times from instance via port ${instanceIdxObj.get()}: ${e.message}")
-            return timesFromFileContent(isPrimary, null)
+            timesFromFileContent(isPrimary, null)
         }
     }
 
@@ -344,67 +309,88 @@ class ClusterEngineIO {
         publicIp: String,
         instanceIdxObj: AtomicInteger,
     ): Any {
-        val tempDirPath = "temp"
-        val tempFilePath = "$tempDirPath/temp_data_$publicIp.txt"
+        val tempFilePath = "$TEMP_DIR_TIMES_PATH/temp_data_$publicIp.txt"
 
         return try {
-            // Creates the temporary directory to store the copied file
-            Files.createDirectories(Paths.get(tempDirPath))
-
-            // Builds the SCP command to copy the times.txt file from the instance
-            hostFileManager.deleteHostFile()
-            hostFileManager.createHostFile()
+            preparationForScp(TEMP_DIR_TIMES_PATH)
 
             val pathToKnownHostsFile = "tmp/tmp_hostfile_${instanceIdxObj.get()}"
 
             val copyTimesCommand =
-                arrayOf(
-                    "scp",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "ConnectTimeout=10",
-                    "-o", "UserKnownHostsFile=$pathToKnownHostsFile",
-                    "-i", clusterKeyFilePath,
-                    "$userOnInstance@$publicIp:/home/ubuntu/times.txt",
-                    tempFilePath,
+                SshCommandBuilder.buildScpCommand(
+                    sourcePath = "$userOnInstance@$publicIp:/home/ubuntu/times.txt",
+                    destinationPath = tempFilePath,
+                    identityFile = clusterKeyFilePath,
+                    knownHostsFile = pathToKnownHostsFile,
+                    extraOptions = listOf("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"),
                 )
 
             // Executes the SCP command
-            val success = executeSecureShellCommand(copyTimesCommand, isScp = true)
-            if (!success) {
-                logger.warn("Could not retrieve times.txt from instance $publicIp.")
+            if (!executeScpAndLog(copyTimesCommand)) {
                 return timesFromFileContent(isPrimary, null)
             }
 
-            // Reads the contents of the file
-            val lines = File(tempFilePath).readLines()
-
-            // Deletes the temporary file after reading
-            File(tempFilePath).delete()
-
-            // Warns if the file has fewer lines than expected
-            if (isPrimary && lines.size < 5) {
-                logger.warn("Primary times.txt on $publicIp has less than 5 lines: $lines")
-            } else if (!isPrimary && lines.size < 3) {
-                logger.warn("Non-primary times.txt on $publicIp has less than 3 lines: $lines")
-            }
-
-            // Returns the appropriate data object with fallback to "error" if lines are missing
-            timesFromFileContent(isPrimary, lines)
+            parseTimesFileAndCleanUp(isPrimary, tempFilePath, "IP $publicIp")
         } catch (e: Exception) {
             logger.error("Failed to get times from instance $publicIp: ${e.message}")
-            if (isPrimary) {
-                PartialTimesPrimary("error", "error", "error", "error", "error")
-            } else {
-                PartialTimesNonPrimary("error", "error", "error")
-            }
+            timesFromFileContent(isPrimary, null)
         }
+    }
+
+    private fun preparationForScp(tempDirPath: String) {
+        // Creates the temporary directory to store the copied file
+        Files.createDirectories(Paths.get(tempDirPath))
+
+        // Builds the SCP command to copy the times.txt file from the instance
+        hostFileManager.deleteHostFile()
+        hostFileManager.createHostFile()
+    }
+
+    private fun executeScpAndLog(
+        command: Array<String>,
+        port: Int? = null,
+    ): Boolean {
+        val success = executeSecureShellCommand(command, isScp = true)
+
+        if (!success) {
+            val target = if (port != null) "port $port" else "the instance"
+            logger.warn("Could not retrieve times.txt from instance via $target.")
+        }
+
+        return success
+    }
+
+    private fun parseTimesFileAndCleanUp(
+        isPrimary: Boolean,
+        tempFilePath: String,
+        targetIdentifier: String,
+    ): Any {
+        val downloadedFile = File(tempFilePath)
+
+        if (!downloadedFile.exists() || downloadedFile.length() == 0L) {
+            logger.warn("File times.txt was not downloaded correctly or is empty for $targetIdentifier.")
+            return timesFromFileContent(isPrimary, null)
+        }
+
+        val lines = downloadedFile.readLines()
+
+        downloadedFile.delete()
+
+        if (isPrimary && lines.size < 5) {
+            logger.warn("Primary times.txt on $targetIdentifier has less than 5 lines: $lines")
+        } else if (!isPrimary && lines.size < 3) {
+            logger.warn("Non-primary times.txt on $targetIdentifier has less than 3 lines: $lines")
+        }
+
+        return timesFromFileContent(isPrimary, lines)
     }
 }
 
 private fun scriptExists(scriptPath: String): Boolean {
     try {
-        // Create a File object for the script
-        val scriptFile = File(scriptPath)
+        val scriptFile =
+            File(scriptPath).takeIf { it.exists() }
+                ?: File("../$scriptPath")
 
         if (!scriptFile.exists()) {
             logger.error("Script file not found at the provided path: $scriptPath")
@@ -416,22 +402,6 @@ private fun scriptExists(scriptPath: String): Boolean {
         logger.error("Error while creating File object for the script: $scriptPath: ${e.message}")
         return false
     }
-}
-
-private fun allowExecutionAndRun(
-    userOnInstance: String,
-    baseCommand: Array<String>,
-    extraArgs: Array<String>,
-    clusterPrivateIps: String,
-): Boolean {
-    val remoteScriptPath = "/home/$userOnInstance/$SCRIPT_NAME"
-
-    val sshCommandScript =
-        arrayOf("chmod", "+x", "$remoteScriptPath;") + arrayOf(remoteScriptPath) + extraArgs + clusterPrivateIps
-
-    val sshCommand = baseCommand + arrayOf(sshCommandScript.joinToString(" "))
-
-    return executeSecureShellCommand(sshCommand, isScp = false)
 }
 
 // This function executes a remote secure shell command, such as ssh or scp

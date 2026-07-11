@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm")
+    kotlin("plugin.serialization") version "2.0.21"
 }
 
 group = "app"
@@ -21,6 +22,11 @@ dependencies {
 
 kotlin {
     jvmToolchain(21)
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+    systemProperty("kotlinx.coroutines.io.parallelism", "512")
 }
 
 tasks.test {

@@ -1,6 +1,7 @@
 package core
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import core.domain.ClustEngineInstance
 import core.domain.PartialTimesNonPrimary
 import core.domain.PartialTimesPrimary
 import kotlinx.coroutines.Dispatchers
@@ -24,13 +25,13 @@ class ClusterService<S>(
             clusterEngine.isClusterInited(clusterEngineIO)
         }
 
-    private fun createCluster(): Pair<PartialTimesPrimary, List<PartialTimesNonPrimary>> =
+    private fun createCluster(): Pair<PartialTimesPrimary?, List<PartialTimesNonPrimary?>> =
         runBlocking(Dispatchers.IO) {
-            return@runBlocking clusterEngine.createCluster(clusterEngineIO)
+            return@runBlocking clusterEngine.createCluster(clusterEngineIO, clusterEngine.ipRoutingMode)
         }
 
-    override fun init(): Pair<PartialTimesPrimary, List<PartialTimesNonPrimary>> {
-        val data: Pair<PartialTimesPrimary, List<PartialTimesNonPrimary>>
+    override fun init(): Pair<PartialTimesPrimary?, List<PartialTimesNonPrimary?>> {
+        val data: Pair<PartialTimesPrimary?, List<PartialTimesNonPrimary?>>
         runBlocking(Dispatchers.IO) {
             data = createCluster()
             writeActiveInstances()
@@ -61,6 +62,11 @@ class ClusterService<S>(
             }
         }
     }
+
+    override fun listClusterInstances(): List<ClustEngineInstance> =
+        runBlocking(Dispatchers.IO) {
+            return@runBlocking clusterEngine.getClusterInstances(clusterEngineIO)
+        }
 
     override fun stopAll() {
         runBlocking(Dispatchers.IO) {

@@ -1,0 +1,1 @@
+java -Dkotlinx.coroutines.io.parallelism=150 -jar ConsoleAPP.jar

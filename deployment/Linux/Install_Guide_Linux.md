@@ -26,7 +26,7 @@ This mode installs the pre-built application, bypassing the need to compile the 
     ```bash
     ./install_prod.sh
     ```
-### Option B: Ded Mode
+### Option B: Dev Mode
 1. **Clone the Repository:** Open your terminal application and download the project directly using Git.
    ```bash
    git clone https://github.com/bernardo-lopo/ClustEngine.git
